@@ -1587,6 +1587,7 @@ section[id]{scroll-margin-top:80px}
   .mobile-menu-links a:last-child{background:#ef3f91;color:#24203b}
   section[id]{scroll-margin-top:86px}
 }
+
 </style>
 </head>
 <body>
@@ -1792,6 +1793,33 @@ const observer=new IntersectionObserver(items=>items.forEach(item=>{if(item.isIn
  const center=story.querySelector('.cinematic-center'),halo=story.querySelector('.cinematic-halo'),phase=story.querySelector('#phaseText');
  const progress=story.querySelector('.story-progress-fill'),counter=story.querySelector('.story-counter');
  const ns='http://www.w3.org/2000/svg',N=22, paths=[],ghosts=[],travelers=[],nodes=[];
+ // No desktop, cada rota nasce diretamente da borda do seu card.
+ // Não desenhamos extensões: é um único path SVG contínuo até o núcleo.
+ function cardAnchor(lane,spread){
+   if(innerWidth<=850)return null;
+   const matrix=svg.getScreenCTM();if(!matrix)return null;
+   const card=chips[lane],rect=card.getBoundingClientRect();
+   if(!rect.width||!rect.height)return null;
+   const point=svg.createSVGPoint();
+   point.x=rect.left+rect.width*(.20+.12*Math.min(5,spread));
+   point.y=lane<2?rect.bottom:rect.top;
+   return point.matrixTransform(matrix.inverse());
+ }
+ function continuousOrdered(shape){
+   const anchor=cardAnchor(shape.lane,shape.spread);
+   if(!anchor)return shape.ordered;
+   const x=anchor.x,y=anchor.y,dx=380-x,dy=320-y;
+   const offset=(shape.spread-2)*5;
+   return [
+     [x,y],
+     [x+dx*.05,y+dy*.24],
+     [x+dx*.37,y+dy*.15],
+     [x+dx*.60,y+dy*.68],
+     [x+dx*.83,320+offset*.25],
+     [380,320]
+   ];
+ }
+
  const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));const lerp=(a,b,t)=>a+(b-a)*t;const ease=t=>t*t*(3-2*t);
  // seeded pseudo-randomness makes every reload show exactly the same designed composition
  let seed=271829;const rand=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296};
@@ -1804,18 +1832,18 @@ const observer=new IntersectionObserver(items=>items.forEach(item=>{if(item.isIn
    const lane=i%4;const endpoints=[[65,125],[690,125],[65,520],[690,520]];
    const p0=endpoints[lane];const offset=(Math.floor(i/4)-2)*10;
    const ordered=[ [p0[0],p0[1]+offset], [lerp(p0[0],380,.3),p0[1]+offset], [lerp(p0[0],380,.48),lerp(p0[1]+offset,320,.18)], [lerp(p0[0],380,.65),lerp(p0[1]+offset,320,.65)], [lerp(p0[0],380,.82),320+offset*.2], [380,320] ];
-   shapes.push({chaos,ordered,lane});
+   shapes.push({chaos,ordered,lane,spread:Math.floor(i/4)});
    const ghost=document.createElementNS(ns,'path');ghost.setAttribute('class','cinematic-path ghost');group.appendChild(ghost);ghosts.push(ghost);
    const path=document.createElementNS(ns,'path');path.setAttribute('class','cinematic-path');path.style.stroke=i%5===0?'#7953c7':i%3===0?'#a06ade':'url(#cinematicRoute)';path.style.strokeWidth=i%4===0?'2.8':'1.35';group.appendChild(path);paths.push(path);
    if(i<11){const dot=document.createElementNS(ns,'circle');dot.setAttribute('class','cinematic-traveler');dot.setAttribute('r',i%3===0?'3.8':'2.5');travelerGroup.appendChild(dot);travelers.push({dot,i});}
  }
  for(let i=0;i<4;i++){const circle=document.createElementNS(ns,'circle');circle.setAttribute('class','cinematic-node');circle.setAttribute('r','6');nodeGroup.appendChild(circle);nodes.push(circle)}
  const pathOf=pts=>`M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)} C${pts[1][0].toFixed(1)},${pts[1][1].toFixed(1)} ${pts[2][0].toFixed(1)},${pts[2][1].toFixed(1)} ${pts[3][0].toFixed(1)},${pts[3][1].toFixed(1)} S${pts[4][0].toFixed(1)},${pts[4][1].toFixed(1)} ${pts[5][0].toFixed(1)},${pts[5][1].toFixed(1)}`;
- const pointsAt=(shape,m)=>shape.chaos.map((pt,j)=>pt.map((value,k)=>lerp(value,shape.ordered[j][k],m)));
+ const pointsAt=(shape,m)=>{const ordered=continuousOrdered(shape);return shape.chaos.map((pt,j)=>pt.map((value,k)=>lerp(value,ordered[j][k],m)))};
  function render(p){p=clamp(p);const morph=ease(clamp((p-.10)/.73)),bright=ease(clamp((p-.45)/.43));
    shapes.forEach((shape,i)=>{const pts=pointsAt(shape,morph),d=pathOf(pts);paths[i].setAttribute('d',d);ghosts[i].setAttribute('d',d);paths[i].style.opacity=String(lerp(.42,i%4===0?.95:.69,morph));ghosts[i].style.opacity=String(lerp(.07,.35,bright));});
    travelers.forEach(({dot,i},j)=>{const path=paths[i],length=path.getTotalLength(),point=path.getPointAtLength(length*((p*.75+j*.112)%1));dot.setAttribute('cx',point.x);dot.setAttribute('cy',point.y);dot.style.opacity=String(.35+bright*.65)});
-   nodes.forEach((node,i)=>{const loc=[[65,125],[690,125],[65,520],[690,520]][i];node.setAttribute('cx',loc[0]);node.setAttribute('cy',loc[1]);node.style.opacity=String(bright)});
+   nodes.forEach((node,i)=>{const a=cardAnchor(i,2);const loc=a?[a.x,a.y]:[[65,125],[690,125],[65,520],[690,520]][i];node.setAttribute('cx',loc[0]);node.setAttribute('cy',loc[1]);node.style.opacity=String(bright)});
    chips.forEach((chip,i)=>{const offsets=[[-42,-27],[42,-32],[-50,36],[50,34]][i];chip.style.transform=`translate(${offsets[0]*(1-morph)*(innerWidth<=850?.13:1)}px,${offsets[1]*(1-morph)*(innerWidth<=850?.23:1)}px) rotate(${(i%2?1:-1)*(1-morph)*11}deg) scale(${.89+.11*morph})`;chip.style.opacity=String(.42+bright*.58);chip.style.borderColor=bright>.75?'#ef3f91ac':'#e887b758'});
    center.style.transform=`translate(-50%,-50%) scale(${.83+bright*.22}) rotate(${(1-morph)*-8}deg)`;
    center.style.boxShadow=`0 30px 80px #0009,0 0 ${55+bright*105}px rgba(237,57,156,${.18+bright*.22}),inset 0 1px #ffffff22`;
